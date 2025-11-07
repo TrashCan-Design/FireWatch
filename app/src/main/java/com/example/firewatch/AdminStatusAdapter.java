@@ -16,6 +16,15 @@ import java.util.List;
 public class AdminStatusAdapter extends RecyclerView.Adapter<AdminStatusAdapter.VH> {
 
     private final List<ApiModels.StatusRow> data = new ArrayList<>();
+    private final OnDeviceClickListener clickListener;
+
+    public interface OnDeviceClickListener {
+        void onDeviceClick(ApiModels.StatusRow device);
+    }
+
+    public AdminStatusAdapter(OnDeviceClickListener listener) {
+        this.clickListener = listener;
+    }
 
     public void setData(List<ApiModels.StatusRow> items) {
         data.clear();
@@ -64,8 +73,8 @@ public class AdminStatusAdapter extends RecyclerView.Adapter<AdminStatusAdapter.
             );
         } else if (isOffline) {
             h.chip.setText("Offline");
-            h.chip.setChipBackgroundColorResource(R.color.status_unknown);
-            h.chip.setTextColor(h.itemView.getContext().getColor(android.R.color.darker_gray));
+            h.chip.setChipBackgroundColorResource(R.color.status_unknown_light);
+            h.chip.setTextColor(h.itemView.getContext().getColor(android.R.color.black));
             h.statusIndicator.setBackgroundColor(
                     h.itemView.getContext().getColor(R.color.status_unknown)
             );
@@ -77,6 +86,13 @@ public class AdminStatusAdapter extends RecyclerView.Adapter<AdminStatusAdapter.
                     h.itemView.getContext().getColor(R.color.status_safe)
             );
         }
+
+        // Set click listener to open logs
+        h.itemView.setOnClickListener(v -> {
+            if (clickListener != null) {
+                clickListener.onDeviceClick(row);
+            }
+        });
     }
 
     private String formatTime(String timestamp) {

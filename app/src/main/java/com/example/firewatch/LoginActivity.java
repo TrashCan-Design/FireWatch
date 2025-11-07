@@ -132,6 +132,7 @@ public class LoginActivity extends AppCompatActivity {
     private void checkForClerkSession() {
         if (webView == null || sessionChecked) return;
 
+        // CRITICAL FIX: Use publicMetadata.role as PRIMARY source
         webView.evaluateJavascript(
                 "(function() { " +
                         "  try { " +
@@ -142,8 +143,7 @@ public class LoginActivity extends AppCompatActivity {
                         "        firstName: window.Clerk.user.firstName || '', " +
                         "        lastName: window.Clerk.user.lastName || '', " +
                         "        username: window.Clerk.user.username || '', " +
-                        "        role: window.Clerk.user.publicMetadata?.role || 'user', " +
-                        "        strategy: window.Clerk.user.publicMetadata?.strategy || '' " +
+                        "        role: window.Clerk.user.publicMetadata?.role || 'user' " +
                         "      }); " +
                         "    } " +
                         "  } catch(e) { " +
@@ -182,15 +182,16 @@ public class LoginActivity extends AppCompatActivity {
             String firstName = json.optString("firstName", "");
             String lastName = json.optString("lastName", "");
             String username = json.optString("username", "");
-            String clerkStrategy = json.optString("strategy", "").toLowerCase();
-            String clerkRole = json.optString("role", "user").toLowerCase();
 
-            String finalRole = (!clerkStrategy.isEmpty()) ? clerkStrategy : clerkRole;
+            // CRITICAL: publicMetadata.role is the ONLY source of truth
+            String clerkRole = json.optString("role", "user").toLowerCase().trim();
 
             if (clerkUserId.isEmpty() || email.isEmpty()) {
                 Log.w(TAG, "Invalid session data");
                 return;
             }
+
+            Log.d(TAG, "Clerk Role from publicMetadata: " + clerkRole);
 
             prefs.edit()
                     .putString("clerk_user_id", clerkUserId)
@@ -198,13 +199,12 @@ public class LoginActivity extends AppCompatActivity {
                     .putString("user_first_name", firstName)
                     .putString("user_last_name", lastName)
                     .putString("user_username", username)
-                    .putString("clerk_strategy", clerkStrategy)
                     .putString("clerk_role", clerkRole)
                     .apply();
 
             runOnUiThread(() -> progressBar.setVisibility(View.VISIBLE));
 
-            checkOrCreateUserInSupabase(clerkUserId, email, firstName, lastName, username, finalRole);
+            checkOrCreateUserInSupabase(clerkUserId, email, firstName, lastName, username, clerkRole);
 
         } catch (Exception e) {
             Log.e(TAG, "Login error: " + e.getMessage(), e);
@@ -217,25 +217,20 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void checkOrCreateUserInSupabase(String clerkUserId, String email, String firstName,
-                                             String lastName, String username, String finalRole) {
+                                             String lastName, String username, String clerkRole) {
         SupabaseApi api = ApiClient.api(this);
 
         api.getUserByClerkId(clerkUserId).enqueue(new Callback<List<ApiModels.UserRow>>() {
             @Override
             public void onResponse(Call<List<ApiModels.UserRow>> call, Response<List<ApiModels.UserRow>> response) {
                 if (response.isSuccessful() && response.body() != null && !response.body().isEmpty()) {
-                    ApiModels.UserRow user = response.body().get(0);
-
-                    // Use Clerk role as source of truth
-                    String userRole = (finalRole != null && !finalRole.isEmpty())
-                            ? finalRole.toLowerCase()
-                            : "user";
-
-                    Log.d(TAG, "User exists. Using role: " + userRole);
-                    saveUserAndProceed(clerkUserId, email, userRole);
+                    // User exists - use Clerk role as PRIMARY source
+                    Log.d(TAG, "User exists. Using Clerk role: " + clerkRole);
+                    saveUserAndProceed(clerkUserId, email, clerkRole);
 
                 } else {
-                    createUserInSupabase(clerkUserId, email, firstName, lastName, username, finalRole);
+                    // User doesn't exist - create with Clerk role
+                    createUserInSupabase(clerkUserId, email, firstName, lastName, username, clerkRole);
                 }
             }
 
@@ -250,34 +245,34 @@ public class LoginActivity extends AppCompatActivity {
             }
         });
     }
+
     private void createUserInSupabase(String clerkUserId, String email, String firstName,
-                                      String lastName, String username, String finalRole) {
+                                      String lastName, String username, String clerkRole) {
         ApiModels.CreateUserRequest request = new ApiModels.CreateUserRequest();
         request.clerk_user_id = clerkUserId;
         request.email = email;
         request.first_name = firstName;
         request.last_name = lastName;
         request.username = username;
-        request.role = finalRole;
+        request.role = clerkRole; // Use Clerk role
 
         SupabaseApi api = ApiClient.api(this);
         api.createUser(request).enqueue(new Callback<ApiModels.UserRow>() {
             @Override
             public void onResponse(Call<ApiModels.UserRow> call, Response<ApiModels.UserRow> response) {
                 if (response.isSuccessful() && response.body() != null) {
-                    String role = (response.body().role != null && !response.body().role.isEmpty())
-                            ? response.body().role : finalRole;
-                    saveUserAndProceed(clerkUserId, email, role);
+                    Log.d(TAG, "User created with role: " + clerkRole);
+                    saveUserAndProceed(clerkUserId, email, clerkRole);
                 } else {
-                    Log.w(TAG, "User creation failed, using Clerk role");
-                    saveUserAndProceed(clerkUserId, email, finalRole);
+                    Log.w(TAG, "User creation failed, proceeding with Clerk role");
+                    saveUserAndProceed(clerkUserId, email, clerkRole);
                 }
             }
 
             @Override
             public void onFailure(Call<ApiModels.UserRow> call, Throwable t) {
                 Log.e(TAG, "Failed to create user: " + t.getMessage(), t);
-                saveUserAndProceed(clerkUserId, email, finalRole);
+                saveUserAndProceed(clerkUserId, email, clerkRole);
             }
         });
     }
@@ -328,6 +323,8 @@ public class LoginActivity extends AppCompatActivity {
 
     private void proceedToApp() {
         String role = prefs.getString("user_role", "user").toLowerCase().trim();
+
+        Log.d(TAG, "Proceeding to app with role: " + role);
 
         Intent intent;
         if ("admin".equals(role)) {

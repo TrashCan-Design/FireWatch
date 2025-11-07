@@ -15,6 +15,7 @@ import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 import retrofit2.Call;
@@ -62,7 +63,15 @@ public class AdminDeviceManagementActivity extends AppCompatActivity {
             public void onResponse(Call<List<ApiModels.StatusRow>> call, Response<List<ApiModels.StatusRow>> response) {
                 progressBar.setVisibility(View.GONE);
                 if (response.isSuccessful() && response.body() != null) {
-                    adapter.setDevices(response.body());
+                    // Get unique devices by esp32_id (latest entry for each device)
+                    LinkedHashMap<String, ApiModels.StatusRow> uniqueDevices = new LinkedHashMap<>();
+                    for (ApiModels.StatusRow row : response.body()) {
+                        if (!uniqueDevices.containsKey(row.esp32_id)) {
+                            uniqueDevices.put(row.esp32_id, row);
+                        }
+                    }
+
+                    adapter.setDevices(new ArrayList<>(uniqueDevices.values()));
                 } else {
                     Toast.makeText(AdminDeviceManagementActivity.this,
                             "Failed to load devices", Toast.LENGTH_SHORT).show();
@@ -79,33 +88,39 @@ public class AdminDeviceManagementActivity extends AppCompatActivity {
     }
 
     private void showEditDialog(ApiModels.StatusRow device) {
+        // Inflate dialog layout
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_edit_device, null);
 
         TextInputEditText edtLocation = dialogView.findViewById(R.id.edtLocation);
         TextInputEditText edtBlock = dialogView.findViewById(R.id.edtBlock);
 
-        edtLocation.setText(device.location != null ? device.location : "");
-        edtBlock.setText(device.block != null ? device.block : "");
+        // Pre-fill with existing values
+        if (edtLocation != null && edtBlock != null) {
+            edtLocation.setText(device.location != null ? device.location : "");
+            edtBlock.setText(device.block != null ? device.block : "");
 
-        new AlertDialog.Builder(this)
-                .setTitle("Edit Device: " + device.esp32_id)
-                .setView(dialogView)
-                .setPositiveButton("Update", (dialog, which) -> {
-                    String location = edtLocation.getText() != null ?
-                            edtLocation.getText().toString().trim() : "";
-                    String block = edtBlock.getText() != null ?
-                            edtBlock.getText().toString().trim() : "";
+            new AlertDialog.Builder(this)
+                    .setTitle("Edit Device: " + device.esp32_id)
+                    .setView(dialogView)
+                    .setPositiveButton("Update", (dialog, which) -> {
+                        String location = edtLocation.getText() != null ?
+                                edtLocation.getText().toString().trim() : "";
+                        String block = edtBlock.getText() != null ?
+                                edtBlock.getText().toString().trim() : "";
 
-                    if (location.isEmpty() && block.isEmpty()) {
-                        Toast.makeText(this, "Please enter at least one field",
-                                Toast.LENGTH_SHORT).show();
-                        return;
-                    }
+                        if (location.isEmpty() && block.isEmpty()) {
+                            Toast.makeText(this, "Please enter at least one field",
+                                    Toast.LENGTH_SHORT).show();
+                            return;
+                        }
 
-                    updateDevice(device.esp32_id, location, block);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+                        updateDevice(device.esp32_id, location, block);
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        } else {
+            Toast.makeText(this, "Error loading dialog", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void updateDevice(String esp32Id, String location, String block) {

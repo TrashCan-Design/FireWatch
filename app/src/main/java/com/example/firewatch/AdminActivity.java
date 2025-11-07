@@ -39,6 +39,8 @@ public class AdminActivity extends AppCompatActivity {
     private Map<String, String> deviceStatusMap;
     private int currentFloor = 1;
     private SharedPreferences prefs;
+    private boolean hasActiveFire = false;
+    private List<String> currentFireDevices = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,7 +92,15 @@ public class AdminActivity extends AppCompatActivity {
     private void setupRecyclers() {
         b.recyclerStatus.setLayoutManager(new LinearLayoutManager(this));
         b.recyclerStatus.setNestedScrollingEnabled(true);
-        statusAdapter = new AdminStatusAdapter();
+
+        // Pass click listener to open device logs
+        statusAdapter = new AdminStatusAdapter(device -> {
+            Intent intent = new Intent(AdminActivity.this, DeviceLogsActivity.class);
+            intent.putExtra("device_id", device.esp32_id);
+            intent.putExtra("location", device.location);
+            intent.putExtra("block", device.block);
+            startActivity(intent);
+        });
         b.recyclerStatus.setAdapter(statusAdapter);
 
         b.recyclerLogs.setLayoutManager(new LinearLayoutManager(this));
@@ -118,6 +128,9 @@ public class AdminActivity extends AppCompatActivity {
         if (id == R.id.action_settings) {
             startActivity(new Intent(this, AdminSettingsActivity.class));
             return true;
+        } else if (id == R.id.action_device_management) {
+            startActivity(new Intent(this, AdminDeviceManagementActivity.class));
+            return true;
         } else if (id == R.id.action_logout) {
             logout();
             return true;
@@ -133,44 +146,61 @@ public class AdminActivity extends AppCompatActivity {
             @Override
             public void onResponse(Call<List<ApiModels.StatusRow>> call, Response<List<ApiModels.StatusRow>> res) {
                 if (!res.isSuccessful() || res.body() == null) {
-                    updateUI(new ArrayList<>(), "--", 0);
+                    updateUIOffline();
                     return;
                 }
 
                 LinkedHashMap<String, ApiModels.StatusRow> latest = new LinkedHashMap<>();
                 for (ApiModels.StatusRow row : res.body()) {
-                    if (!latest.containsKey(row.location)) {
-                        latest.put(row.location, row);
+                    if (!latest.containsKey(row.esp32_id)) {
+                        latest.put(row.esp32_id, row);
                     }
                 }
 
                 deviceStatusMap.clear();
+                currentFireDevices.clear();
+                List<String> offlineDevices = new ArrayList<>();
+
                 for (ApiModels.StatusRow row : latest.values()) {
-                    deviceStatusMap.put(row.location, row.last_status);
+                    String key = row.location != null && !row.location.isEmpty()
+                            ? row.location : row.esp32_id;
+                    deviceStatusMap.put(key, row.last_status);
+
+                    if ("fire".equalsIgnoreCase(row.last_status)) {
+                        currentFireDevices.add(key);
+                    } else if ("failed".equalsIgnoreCase(row.last_status)) {
+                        offlineDevices.add(key);
+                    }
                 }
 
                 statusAdapter.setData(new ArrayList<>(latest.values()));
 
-                List<String> fires = new ArrayList<>();
                 String newestTime = "--";
                 for (ApiModels.StatusRow s : latest.values()) {
-                    if ("fire".equalsIgnoreCase(s.last_status)) {
-                        fires.add(s.esp32_id);
-                    }
                     if (s.last_updated != null && (newestTime.equals("--") ||
                             s.last_updated.compareTo(newestTime) > 0)) {
                         newestTime = s.last_updated;
                     }
                 }
 
-                updateUI(fires, newestTime, latest.size());
+                hasActiveFire = !currentFireDevices.isEmpty();
+                updateUI(currentFireDevices, offlineDevices, newestTime, latest.size());
+
+                if (hasActiveFire) {
+                    Integer fireFloor = extractFloorFromDeviceId(currentFireDevices.get(0));
+                    if (fireFloor != null && fireFloor >= 1 && fireFloor <= 8) {
+                        currentFloor = fireFloor;
+                        b.spinnerFloor.setSelection(fireFloor - 1);
+                    }
+                }
+
                 updateFloorMap();
             }
 
             @Override
             public void onFailure(Call<List<ApiModels.StatusRow>> call, Throwable t) {
-                b.txtStatus.setText("Offline - " + t.getMessage());
-                b.txtLastUpdated.setText("Last updated: --");
+                hasActiveFire = false;
+                updateUIOffline();
                 statusAdapter.setData(new ArrayList<>());
             }
         });
@@ -188,26 +218,41 @@ public class AdminActivity extends AppCompatActivity {
         });
     }
 
-    private void updateUI(List<String> fires, String newestTime, int totalDevices) {
+    private void updateUI(List<String> fires, List<String> offline, String newestTime, int totalDevices) {
         if (!fires.isEmpty()) {
-            b.txtStatus.setText("🔥 FIRE DETECTED on " + fires.size() + " device(s)");
-            b.txtStatus.setTextColor(getColor(android.R.color.white));
+            b.txtStatus.setText("🔥 FIRE DETECTED on " + fires.size() + " location(s)");
+            b.txtStatus.setTextColor(getColor(R.color.status_fire));
             b.chipStatus.setText("FIRE");
             b.chipStatus.setChipBackgroundColorResource(R.color.status_fire);
+            b.chipStatus.setTextColor(getColor(android.R.color.white));
             b.cardStatus.setCardBackgroundColor(getColor(R.color.status_fire_light));
             b.btnEmergencyCall.setVisibility(View.VISIBLE);
 
-            Integer fireFloor = extractFloorFromDeviceId(fires.get(0));
-            if (fireFloor != null && fireFloor >= 1 && fireFloor <= 8) {
-                currentFloor = fireFloor;
-                b.spinnerFloor.setSelection(fireFloor - 1);
-            }
+        } else if (!offline.isEmpty() && offline.size() == totalDevices) {
+            b.txtStatus.setText("All Devices Offline - " + offline.size() + " locations");
+            b.txtStatus.setTextColor(getColor(android.R.color.black));
+            b.chipStatus.setText("OFFLINE");
+            b.chipStatus.setChipBackgroundColorResource(R.color.status_unknown_light);
+            b.chipStatus.setTextColor(getColor(android.R.color.black));
+            b.cardStatus.setCardBackgroundColor(getColor(android.R.color.white));
+            b.btnEmergencyCall.setVisibility(View.GONE);
+
+        } else if (!offline.isEmpty()) {
+            int safeDevices = totalDevices - offline.size();
+            b.txtStatus.setText(offline.size() + " Devices Offline - " + safeDevices + " Safe");
+            b.txtStatus.setTextColor(getColor(R.color.status_alert));
+            b.chipStatus.setText("WARNING");
+            b.chipStatus.setChipBackgroundColorResource(R.color.status_alert);
+            b.chipStatus.setTextColor(getColor(android.R.color.white));
+            b.cardStatus.setCardBackgroundColor(getColor(android.R.color.white));
+            b.btnEmergencyCall.setVisibility(View.GONE);
 
         } else if (totalDevices > 0) {
             b.txtStatus.setText("✅ All Systems Safe");
             b.txtStatus.setTextColor(getColor(R.color.status_safe));
             b.chipStatus.setText("SAFE");
             b.chipStatus.setChipBackgroundColorResource(R.color.status_safe_light);
+            b.chipStatus.setTextColor(getColor(R.color.status_safe));
             b.cardStatus.setCardBackgroundColor(getColor(android.R.color.white));
             b.btnEmergencyCall.setVisibility(View.GONE);
         } else {
@@ -222,6 +267,17 @@ public class AdminActivity extends AppCompatActivity {
         b.txtLastUpdated.setText("Last updated: " + newestTime);
     }
 
+    private void updateUIOffline() {
+        b.txtStatus.setText("Connection Failed");
+        b.txtStatus.setTextColor(getColor(android.R.color.black));
+        b.chipStatus.setText("OFFLINE");
+        b.chipStatus.setChipBackgroundColorResource(R.color.status_unknown_light);
+        b.chipStatus.setTextColor(getColor(android.R.color.black));
+        b.cardStatus.setCardBackgroundColor(getColor(android.R.color.white));
+        b.txtLastUpdated.setText("Last updated: --");
+        b.btnEmergencyCall.setVisibility(View.GONE);
+    }
+
     private void updateFloorMap() {
         if (currentFloor < 1 || currentFloor > building.size()) return;
 
@@ -231,7 +287,12 @@ public class AdminActivity extends AppCompatActivity {
         for (String location : deviceStatusMap.keySet()) {
             String status = deviceStatusMap.get(location);
             if ("fire".equalsIgnoreCase(status)) {
-                fireRooms.add(location);
+                String roomNumber = extractRoomNumber(location);
+                Integer deviceFloor = extractFloorFromDeviceId(location);
+
+                if (deviceFloor != null && deviceFloor == currentFloor && roomNumber != null) {
+                    fireRooms.add(roomNumber);
+                }
             }
         }
 
@@ -241,13 +302,42 @@ public class AdminActivity extends AppCompatActivity {
     private Integer extractFloorFromDeviceId(String deviceId) {
         if (deviceId == null || deviceId.isEmpty()) return null;
         try {
-            return Integer.parseInt(deviceId.substring(0, 1));
+            if (deviceId.startsWith("STAIRS_")) {
+                String[] parts = deviceId.split("_");
+                if (parts.length >= 3) {
+                    return Integer.parseInt(parts[2]);
+                }
+            }
+            char firstChar = deviceId.charAt(0);
+            if (Character.isDigit(firstChar)) {
+                return Character.getNumericValue(firstChar);
+            }
         } catch (Exception e) {
             return null;
+        }
+        return null;
+    }
+
+    private String extractRoomNumber(String deviceId) {
+        if (deviceId == null || deviceId.isEmpty()) return null;
+        try {
+            if (deviceId.startsWith("STAIRS_")) {
+                return deviceId;
+            }
+            if (deviceId.contains("-")) {
+                String[] parts = deviceId.split("-");
+                return parts[0].trim();
+            }
+            return deviceId.trim();
+        } catch (Exception e) {
+            return deviceId;
         }
     }
 
     private void makeEmergencyCall() {
+        if (!hasActiveFire) {
+            return;
+        }
         Intent callIntent = new Intent(Intent.ACTION_DIAL);
         callIntent.setData(Uri.parse("tel:101"));
         startActivity(callIntent);
@@ -302,5 +392,11 @@ public class AdminActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        fetchAll();
     }
 }
