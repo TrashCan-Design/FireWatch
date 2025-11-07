@@ -148,6 +148,7 @@
                 android:id="@+id/recyclerStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:nestedScrollingEnabled="false"
                 android:layout_marginBottom="28dp" />
 
             <!-- Building Floor Map -->
@@ -203,20 +204,7 @@
             </com.google.android.material.card.MaterialCardView>
 
             <!-- Recent Logs Section -->
-            <TextView
-                android:text="Recent Activity Logs"
-                android:textStyle="bold"
-                android:textSize="18sp"
-                android:textColor="@color/on_surface"
-                android:layout_marginBottom="8dp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/recyclerLogs"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp" />
         </LinearLayout>
     </ScrollView>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

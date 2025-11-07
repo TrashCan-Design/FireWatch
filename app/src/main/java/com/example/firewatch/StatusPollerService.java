@@ -128,11 +128,15 @@ public class StatusPollerService extends Service {
 
                     if (isNewFire || !lastFireDevices.isEmpty()) {
                         sendPersistentFireAlert(fireLocationsList, currentFireDevices.size());
+                        // Broadcast to MainActivity to update UI
+                        sendFireAlertBroadcast();
                     }
                 } else {
                     // Clear fire notification if all clear
                     if (!lastFireDevices.isEmpty()) {
                         clearFireNotification();
+                        // Broadcast to MainActivity to update UI
+                        sendFireAlertBroadcast();
                     }
                 }
 
@@ -144,6 +148,11 @@ public class StatusPollerService extends Service {
                 // Connection failed - keep trying
             }
         });
+    }
+
+    private void sendFireAlertBroadcast() {
+        Intent intent = new Intent("com.example.firewatch.FIRE_ALERT");
+        sendBroadcast(intent);
     }
 
     private void sendPersistentFireAlert(List<String> locations, int count) {

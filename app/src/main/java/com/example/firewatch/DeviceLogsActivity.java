@@ -13,7 +13,9 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -22,7 +24,7 @@ import retrofit2.Response;
 public class DeviceLogsActivity extends AppCompatActivity {
 
     private RecyclerView recyclerLogs;
-    private AdminLogsAdapter logsAdapter;
+    private DeviceLogsAdapter logsAdapter;
     private MaterialButton btnRefresh;
     private LinearProgressIndicator progressBar;
     private String deviceId;
@@ -34,7 +36,6 @@ public class DeviceLogsActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_device_logs);
 
-        // Get device info from intent
         deviceId = getIntent().getStringExtra("device_id");
         location = getIntent().getStringExtra("location");
         block = getIntent().getStringExtra("block");
@@ -45,7 +46,6 @@ public class DeviceLogsActivity extends AppCompatActivity {
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
-            // Set title with device info
             String title = "Logs: " + deviceId;
             if (location != null && !location.isEmpty()) {
                 title = "Logs: " + location;
@@ -61,7 +61,7 @@ public class DeviceLogsActivity extends AppCompatActivity {
         progressBar = findViewById(R.id.progressBar);
 
         recyclerLogs.setLayoutManager(new LinearLayoutManager(this));
-        logsAdapter = new AdminLogsAdapter();
+        logsAdapter = new DeviceLogsAdapter(location, block);
         recyclerLogs.setAdapter(logsAdapter);
 
         btnRefresh.setOnClickListener(v -> loadLogs());
@@ -79,14 +79,12 @@ public class DeviceLogsActivity extends AppCompatActivity {
         progressBar.setVisibility(View.VISIBLE);
         SupabaseApi api = ApiClient.api(this);
 
-        // Get all logs and filter by device ID
         api.getLogs().enqueue(new Callback<List<ApiModels.LogRow>>() {
             @Override
             public void onResponse(Call<List<ApiModels.LogRow>> call, Response<List<ApiModels.LogRow>> response) {
                 progressBar.setVisibility(View.GONE);
 
                 if (response.isSuccessful() && response.body() != null) {
-                    // Filter logs for this specific device
                     List<ApiModels.LogRow> deviceLogs = new ArrayList<>();
                     for (ApiModels.LogRow log : response.body()) {
                         if (deviceId.equals(log.esp32_id)) {

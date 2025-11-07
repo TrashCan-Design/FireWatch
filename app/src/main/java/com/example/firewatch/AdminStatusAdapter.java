@@ -61,40 +61,52 @@ public class AdminStatusAdapter extends RecyclerView.Adapter<AdminStatusAdapter.
 
         h.txtTime.setText("Updated: " + formatTime(row.last_updated));
 
-        boolean isFire = "fire".equalsIgnoreCase(row.last_status);
-        boolean isOffline = "failed".equalsIgnoreCase(row.last_status);
-
-        if (isFire) {
-            h.chip.setText("Fire");
-            h.chip.setChipBackgroundColorResource(R.color.status_fire);
-            h.chip.setTextColor(h.itemView.getContext().getColor(android.R.color.white));
-            h.statusIndicator.setBackgroundColor(
-                    h.itemView.getContext().getColor(R.color.status_fire)
-            );
-        } else if (isOffline) {
-            h.chip.setText("Offline");
+        // Check maintenance mode first
+        if (!row.isSystemActive()) {
+            h.chip.setText("Maintenance");
             h.chip.setChipBackgroundColorResource(R.color.status_unknown_light);
-            h.chip.setTextColor(h.itemView.getContext().getColor(android.R.color.black));
+            h.chip.setTextColor(h.itemView.getContext().getColor(android.R.color.darker_gray));
             h.statusIndicator.setBackgroundColor(
                     h.itemView.getContext().getColor(R.color.status_unknown)
             );
+            // Gray out the entire card
+            h.itemView.setAlpha(0.5f);
         } else {
-            h.chip.setText("Safe");
-            h.chip.setChipBackgroundColorResource(R.color.status_safe_light);
-            h.chip.setTextColor(h.itemView.getContext().getColor(R.color.status_safe));
-            h.statusIndicator.setBackgroundColor(
-                    h.itemView.getContext().getColor(R.color.status_safe)
-            );
+            h.itemView.setAlpha(1.0f);
+
+            boolean isFire = "fire".equalsIgnoreCase(row.last_status);
+            boolean isOffline = "failed".equalsIgnoreCase(row.last_status);
+
+            if (isFire) {
+                h.chip.setText("Fire");
+                h.chip.setChipBackgroundColorResource(R.color.status_fire);
+                h.chip.setTextColor(h.itemView.getContext().getColor(android.R.color.white));
+                h.statusIndicator.setBackgroundColor(
+                        h.itemView.getContext().getColor(R.color.status_fire)
+                );
+            } else if (isOffline) {
+                h.chip.setText("Offline");
+                h.chip.setChipBackgroundColorResource(R.color.status_unknown_light);
+                h.chip.setTextColor(h.itemView.getContext().getColor(android.R.color.black));
+                h.statusIndicator.setBackgroundColor(
+                        h.itemView.getContext().getColor(R.color.status_unknown)
+                );
+            } else {
+                h.chip.setText("Safe");
+                h.chip.setChipBackgroundColorResource(R.color.status_safe_light);
+                h.chip.setTextColor(h.itemView.getContext().getColor(R.color.status_safe));
+                h.statusIndicator.setBackgroundColor(
+                        h.itemView.getContext().getColor(R.color.status_safe)
+                );
+            }
         }
 
-        // Set click listener to open logs
         h.itemView.setOnClickListener(v -> {
             if (clickListener != null) {
                 clickListener.onDeviceClick(row);
             }
         });
     }
-
     private String formatTime(String timestamp) {
         if (timestamp == null || timestamp.isEmpty()) return "Unknown";
         try {

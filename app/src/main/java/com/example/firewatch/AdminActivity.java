@@ -11,6 +11,7 @@ import android.view.View;
 import android.webkit.CookieManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -33,7 +34,6 @@ import retrofit2.Response;
 public class AdminActivity extends AppCompatActivity {
 
     private ActivityAdminBinding b;
-    private AdminLogsAdapter logsAdapter;
     private AdminStatusAdapter statusAdapter;
     private List<BuildingConfig.Floor> building;
     private Map<String, String> deviceStatusMap;
@@ -41,6 +41,7 @@ public class AdminActivity extends AppCompatActivity {
     private SharedPreferences prefs;
     private boolean hasActiveFire = false;
     private List<String> currentFireDevices = new ArrayList<>();
+    private boolean systemActive = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,9 +92,6 @@ public class AdminActivity extends AppCompatActivity {
 
     private void setupRecyclers() {
         b.recyclerStatus.setLayoutManager(new LinearLayoutManager(this));
-        b.recyclerStatus.setNestedScrollingEnabled(true);
-
-        // Pass click listener to open device logs
         statusAdapter = new AdminStatusAdapter(device -> {
             Intent intent = new Intent(AdminActivity.this, DeviceLogsActivity.class);
             intent.putExtra("device_id", device.esp32_id);
@@ -102,16 +100,11 @@ public class AdminActivity extends AppCompatActivity {
             startActivity(intent);
         });
         b.recyclerStatus.setAdapter(statusAdapter);
-
-        b.recyclerLogs.setLayoutManager(new LinearLayoutManager(this));
-        b.recyclerLogs.setNestedScrollingEnabled(true);
-        logsAdapter = new AdminLogsAdapter();
-        b.recyclerLogs.setAdapter(logsAdapter);
     }
 
     private void setupButtons() {
         b.btnRefresh.setOnClickListener(v -> fetchAll());
-        b.btnToggleService.setOnClickListener(v -> toggleService());
+        b.btnToggleService.setOnClickListener(v -> toggleSystemMaintenance());
         b.btnEmergencyCall.setOnClickListener(v -> makeEmergencyCall());
     }
 
@@ -157,6 +150,15 @@ public class AdminActivity extends AppCompatActivity {
                     }
                 }
 
+                // Check if any device has system_active = false (maintenance mode)
+                systemActive = true;
+                for (ApiModels.StatusRow row : latest.values()) {
+                    if (row.check != null && !row.check) {
+                        systemActive = false;
+                        break;
+                    }
+                }
+
                 deviceStatusMap.clear();
                 currentFireDevices.clear();
                 List<String> offlineDevices = new ArrayList<>();
@@ -164,9 +166,14 @@ public class AdminActivity extends AppCompatActivity {
                 for (ApiModels.StatusRow row : latest.values()) {
                     String key = row.location != null && !row.location.isEmpty()
                             ? row.location : row.esp32_id;
-                    deviceStatusMap.put(key, row.last_status);
 
-                    if ("fire".equalsIgnoreCase(row.last_status)) {
+                    if (!row.isSystemActive()) {
+                        deviceStatusMap.put(key, "maintenance");
+                    } else {
+                        deviceStatusMap.put(key, row.last_status);
+                    }
+
+                    if (row.isSystemActive() && "fire".equalsIgnoreCase(row.last_status)) {
                         currentFireDevices.add(key);
                     } else if ("failed".equalsIgnoreCase(row.last_status)) {
                         offlineDevices.add(key);
@@ -195,6 +202,7 @@ public class AdminActivity extends AppCompatActivity {
                 }
 
                 updateFloorMap();
+                updateMonitoringButton();
             }
 
             @Override
@@ -204,22 +212,19 @@ public class AdminActivity extends AppCompatActivity {
                 statusAdapter.setData(new ArrayList<>());
             }
         });
-
-        api.getLogs().enqueue(new Callback<List<ApiModels.LogRow>>() {
-            @Override
-            public void onResponse(Call<List<ApiModels.LogRow>> call, Response<List<ApiModels.LogRow>> res) {
-                if (res.isSuccessful() && res.body() != null) {
-                    logsAdapter.setData(res.body());
-                }
-            }
-
-            @Override
-            public void onFailure(Call<List<ApiModels.LogRow>> call, Throwable t) {}
-        });
     }
 
     private void updateUI(List<String> fires, List<String> offline, String newestTime, int totalDevices) {
-        if (!fires.isEmpty()) {
+        if (!systemActive) {
+            b.txtStatus.setText("🔧 System Under Maintenance");
+            b.txtStatus.setTextColor(getColor(R.color.status_unknown));
+            b.chipStatus.setText("MAINTENANCE");
+            b.chipStatus.setChipBackgroundColorResource(R.color.status_unknown_light);
+            b.chipStatus.setTextColor(getColor(android.R.color.black));
+            b.cardStatus.setCardBackgroundColor(getColor(android.R.color.white));
+            b.btnEmergencyCall.setVisibility(View.GONE);
+
+        } else if (!fires.isEmpty()) {
             b.txtStatus.setText("🔥 FIRE DETECTED on " + fires.size() + " location(s)");
             b.txtStatus.setTextColor(getColor(R.color.status_fire));
             b.chipStatus.setText("FIRE");
@@ -248,7 +253,7 @@ public class AdminActivity extends AppCompatActivity {
             b.btnEmergencyCall.setVisibility(View.GONE);
 
         } else if (totalDevices > 0) {
-            b.txtStatus.setText("✅ All Systems Safe");
+            b.txtStatus.setText("All Systems Safe");
             b.txtStatus.setTextColor(getColor(R.color.status_safe));
             b.chipStatus.setText("SAFE");
             b.chipStatus.setChipBackgroundColorResource(R.color.status_safe_light);
@@ -343,23 +348,103 @@ public class AdminActivity extends AppCompatActivity {
         startActivity(callIntent);
     }
 
-    private void toggleService() {
-        boolean isEnabled = prefs.getBoolean("monitoring_enabled", true);
+    private void toggleSystemMaintenance() {
+        String message = systemActive
+                ? "This will put the system in maintenance mode and disable monitoring for ALL users. Continue?"
+                : "This will activate the system and enable monitoring for all users. Continue?";
 
-        if (isEnabled) {
-            stopService(new Intent(this, StatusPollerService.class));
-            prefs.edit().putBoolean("monitoring_enabled", false).apply();
-        } else {
-            startForegroundService(new Intent(this, StatusPollerService.class));
-            prefs.edit().putBoolean("monitoring_enabled", true).apply();
+        new AlertDialog.Builder(this)
+                .setTitle("System Control")
+                .setMessage(message)
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    updateSystemCheckStatus(!systemActive);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void updateSystemCheckStatus(boolean active) {
+        Toast.makeText(this, active ? "Activating system..." : "Entering maintenance mode...", Toast.LENGTH_SHORT).show();
+
+        // First, get all devices
+        SupabaseApi api = ApiClient.api(this);
+
+        api.getStatus().enqueue(new Callback<List<ApiModels.StatusRow>>() {
+            @Override
+            public void onResponse(Call<List<ApiModels.StatusRow>> call, Response<List<ApiModels.StatusRow>> response) {
+                if (!response.isSuccessful() || response.body() == null) {
+                    Toast.makeText(AdminActivity.this, "Failed to fetch devices", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                List<ApiModels.StatusRow> devices = response.body();
+                updateAllDevicesCheck(devices, active, 0);
+            }
+
+            @Override
+            public void onFailure(Call<List<ApiModels.StatusRow>> call, Throwable t) {
+                Toast.makeText(AdminActivity.this, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void updateAllDevicesCheck(List<ApiModels.StatusRow> devices, boolean active, int index) {
+        if (index >= devices.size()) {
+            // All devices updated
+            systemActive = active;
+            Toast.makeText(this,
+                    active ? "System activated successfully" : "Maintenance mode enabled",
+                    Toast.LENGTH_SHORT).show();
+            fetchAll();
+            return;
         }
 
-        updateMonitoringButton();
+        SupabaseApi api = ApiClient.api(this);
+        ApiModels.UpdateSystemCheckRequest request = new ApiModels.UpdateSystemCheckRequest();
+        request.check = active;
+
+        String deviceId = devices.get(index).esp32_id;
+
+        api.updateDeviceCheck("eq." + deviceId, request).enqueue(new Callback<Void>() {
+            @Override
+            public void onResponse(Call<Void> call, Response<Void> response) {
+                if (response.isSuccessful()) {
+                    // Update next device
+                    updateAllDevicesCheck(devices, active, index + 1);
+                } else {
+                    Toast.makeText(AdminActivity.this,
+                            "Failed to update device: " + deviceId,
+                            Toast.LENGTH_SHORT).show();
+                    // Continue with next device anyway
+                    updateAllDevicesCheck(devices, active, index + 1);
+                }
+            }
+
+            @Override
+            public void onFailure(Call<Void> call, Throwable t) {
+                Toast.makeText(AdminActivity.this,
+                        "Error updating " + deviceId + ": " + t.getMessage(),
+                        Toast.LENGTH_SHORT).show();
+                // Continue with next device anyway
+                updateAllDevicesCheck(devices, active, index + 1);
+            }
+        });
+    }
+
+    private void updateSystemActiveStatus(boolean active) {
+        // Update all devices' system_active status
+        SupabaseApi api = ApiClient.api(this);
+
+        // We'll update via a simple request - you may need to adjust based on your Supabase setup
+        Toast.makeText(this, active ? "Activating system..." : "Entering maintenance mode...", Toast.LENGTH_SHORT).show();
+
+        // Note: You'll need to implement a batch update endpoint or loop through devices
+        // For now, using a simple approach - you may want to add a server-side function
+        fetchAll();
     }
 
     private void updateMonitoringButton() {
-        boolean isEnabled = prefs.getBoolean("monitoring_enabled", true);
-        b.btnToggleService.setText(isEnabled ? "Stop Monitoring" : "Start Monitoring");
+        b.btnToggleService.setText(systemActive ? "Stop System" : "Start System");
     }
 
     @SuppressLint("SetJavaScriptEnabled")

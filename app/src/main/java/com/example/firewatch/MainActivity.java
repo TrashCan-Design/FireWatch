@@ -2,12 +2,17 @@ package com.example.firewatch;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -49,6 +54,22 @@ public class MainActivity extends AppCompatActivity {
     private SharedPreferences prefs;
     private boolean hasActiveFire = false;
     private List<String> currentFireDevices = new ArrayList<>();
+    private Handler autoRefreshHandler;
+    private Runnable autoRefreshRunnable;
+
+    // BroadcastReceiver to listen for fire alerts
+    private BroadcastReceiver fireAlertReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("com.example.firewatch.FIRE_ALERT".equals(intent.getAction())) {
+                Log.d(TAG, "Fire alert broadcast received - refreshing UI");
+                // Fire alert received - refresh UI immediately on main thread
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    fetchAll();
+                });
+            }
+        }
+    };
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
@@ -60,6 +81,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -75,11 +97,33 @@ public class MainActivity extends AppCompatActivity {
         setupFloorSelector();
         setupRecyclers();
         setupButtons();
+        setupAutoRefresh();
 
         fetchAll();
         updateMonitoringButton();
 
         checkNotificationPermission();
+
+        // Register BroadcastReceiver for fire alerts
+        IntentFilter filter = new IntentFilter("com.example.firewatch.FIRE_ALERT");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(fireAlertReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(fireAlertReceiver, filter);
+        }
+        Log.d(TAG, "BroadcastReceiver registered");
+    }
+
+    private void setupAutoRefresh() {
+        autoRefreshHandler = new Handler(Looper.getMainLooper());
+        autoRefreshRunnable = new Runnable() {
+            @Override
+            public void run() {
+                Log.d(TAG, "Auto-refresh triggered");
+                fetchAll();
+                autoRefreshHandler.postDelayed(this, 5000); // Auto refresh every 5 seconds
+            }
+        };
     }
 
     private void setupFloorSelector() {
@@ -107,7 +151,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupRecyclers() {
         b.recyclerStatus.setLayoutManager(new LinearLayoutManager(this));
-        b.recyclerStatus.setNestedScrollingEnabled(true);
+        b.recyclerStatus.setNestedScrollingEnabled(false);
         statusAdapter = new UserStatusAdapter();
         b.recyclerStatus.setAdapter(statusAdapter);
     }
@@ -134,11 +178,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void fetchAll() {
+        Log.d(TAG, "fetchAll() called");
         SupabaseApi api = ApiClient.api(this);
 
         api.getStatus().enqueue(new Callback<List<ApiModels.StatusRow>>() {
             @Override
             public void onResponse(Call<List<ApiModels.StatusRow>> call, Response<List<ApiModels.StatusRow>> res) {
+                Log.d(TAG, "API response received - success: " + res.isSuccessful());
+
                 if (!res.isSuccessful() || res.body() == null) {
                     updateUIOffline();
                     return;
@@ -151,20 +198,34 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
+                // Check if system is in maintenance mode
+                boolean systemInMaintenance = false;
+                for (ApiModels.StatusRow row : latest.values()) {
+                    if (row.check != null && !row.check) {
+                        systemInMaintenance = true;
+                        break;
+                    }
+                }
+
                 deviceStatusMap.clear();
                 currentFireDevices.clear();
                 List<String> offlineDevices = new ArrayList<>();
 
                 for (ApiModels.StatusRow row : latest.values()) {
-                    deviceStatusMap.put(row.location, row.last_status);
-                    Log.d(TAG, "Device: " + row.location + " Status: " + row.last_status);
+                    if (!row.isSystemActive()) {
+                        deviceStatusMap.put(row.location, "maintenance");
+                    } else {
+                        deviceStatusMap.put(row.location, row.last_status);
+                    }
+
+                    Log.d(TAG, "Device: " + row.location + " Status: " + row.last_status + " Check: " + row.check);
                 }
 
                 statusAdapter.setData(new ArrayList<>(latest.values()));
 
                 String newestTime = "--";
                 for (ApiModels.StatusRow s : latest.values()) {
-                    if ("fire".equalsIgnoreCase(s.last_status)) {
+                    if (s.isSystemActive() && "fire".equalsIgnoreCase(s.last_status)) {
                         currentFireDevices.add(s.location);
                         Log.d(TAG, "Fire detected at: " + s.location);
                     } else if ("failed".equalsIgnoreCase(s.last_status)) {
@@ -178,7 +239,13 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 hasActiveFire = !currentFireDevices.isEmpty();
-                updateUI(currentFireDevices, offlineDevices, newestTime, latest.size());
+                Log.d(TAG, "hasActiveFire: " + hasActiveFire + ", fire count: " + currentFireDevices.size());
+
+                if (systemInMaintenance) {
+                    updateUIMaintenance();
+                } else {
+                    updateUI(currentFireDevices, offlineDevices, newestTime, latest.size());
+                }
 
                 if (hasActiveFire) {
                     Integer fireFloor = extractFloorFromDeviceId(currentFireDevices.get(0));
@@ -195,15 +262,17 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onFailure(Call<List<ApiModels.StatusRow>> call, Throwable t) {
+                Log.e(TAG, "API call failed: " + t.getMessage());
                 hasActiveFire = false;
                 updateUIOffline();
                 statusAdapter.setData(new ArrayList<>());
-                Log.e(TAG, "Failed to fetch status: " + t.getMessage());
             }
         });
     }
 
     private void updateUI(List<String> fires, List<String> offline, String newestTime, int totalDevices) {
+        Log.d(TAG, "updateUI called - fires: " + fires.size() + ", offline: " + offline.size());
+
         if (!fires.isEmpty()) {
             b.txtStatus.setText("🔥 FIRE ALERT - " + fires.size() + " location");
             int col = ContextCompat.getColor(MainActivity.this, R.color.status_fire);
@@ -215,6 +284,7 @@ public class MainActivity extends AppCompatActivity {
             b.cardStatus.setCardBackgroundColor(getColor(R.color.status_fire_light));
             b.btnEmergencyCall.setVisibility(View.VISIBLE);
             b.btnEmergencyCall.setEnabled(true);
+            Log.d(TAG, "UI updated to show FIRE state");
 
         } else if (!offline.isEmpty() && offline.size() == totalDevices) {
             // ALL DEVICES OFFLINE - Grey styling
@@ -277,6 +347,19 @@ public class MainActivity extends AppCompatActivity {
         b.txtLastUpdated.setText("Last updated: --");
         b.btnEmergencyCall.setVisibility(View.GONE);
         b.btnEmergencyCall.setEnabled(false);
+    }
+
+    private void updateUIMaintenance() {
+        b.txtStatus.setText("System Under Maintenance");
+        b.txtStatus.setTextColor(ContextCompat.getColor(this, R.color.status_unknown));
+        b.chipStatus.setText("Maintenance");
+        b.chipStatus.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray));
+        b.chipStatus.setChipBackgroundColorResource(R.color.status_unknown_light);
+        b.cardStatus.setCardBackgroundColor(ContextCompat.getColor(this, android.R.color.white));
+        b.txtLastUpdated.setText("System is currently under maintenance");
+        b.btnEmergencyCall.setVisibility(View.GONE);
+        b.btnEmergencyCall.setEnabled(false);
+        b.btnToggleService.setEnabled(false);
     }
 
     private void updateFloorMap() {
@@ -467,6 +550,32 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        Log.d(TAG, "onResume - starting auto refresh");
         fetchAll();
+        // Start auto-refresh when activity is visible
+        autoRefreshHandler.post(autoRefreshRunnable);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        Log.d(TAG, "onPause - stopping auto refresh");
+        // Stop auto-refresh when activity is not visible
+        autoRefreshHandler.removeCallbacks(autoRefreshRunnable);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Log.d(TAG, "onDestroy - cleaning up");
+        // Stop auto-refresh
+        autoRefreshHandler.removeCallbacks(autoRefreshRunnable);
+        // Unregister BroadcastReceiver
+        try {
+            unregisterReceiver(fireAlertReceiver);
+            Log.d(TAG, "BroadcastReceiver unregistered");
+        } catch (Exception e) {
+            Log.e(TAG, "Error unregistering receiver: " + e.getMessage());
+        }
     }
 }

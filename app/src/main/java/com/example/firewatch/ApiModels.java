@@ -4,7 +4,6 @@ import com.google.gson.annotations.SerializedName;
 
 public class ApiModels {
 
-    // User table model
     public static class UserRow {
         public String id;
         public String clerk_user_id;
@@ -12,12 +11,11 @@ public class ApiModels {
         public String username;
         public String first_name;
         public String last_name;
-        public String role; // "user" or "admin"
+        public String role;
         public String created_at;
         public String updated_at;
     }
 
-    // Create user request
     public static class CreateUserRequest {
         public String clerk_user_id;
         public String email;
@@ -27,14 +25,14 @@ public class ApiModels {
         public String role;
     }
 
-    // Log table model
     public static class LogRow {
         public long id;
         public String esp32_id;
-        public String status; // "fire", "safe", or "failed"
+        public String status;
         public String timestamp;
+        public String location; // Track location at time of log
+        public String block;    // Track block at time of log
 
-        // Helper methods
         public boolean isFire() {
             return "fire".equalsIgnoreCase(status);
         }
@@ -48,15 +46,16 @@ public class ApiModels {
         }
     }
 
-    // Status table model
     public static class StatusRow {
         public String esp32_id;
-        public String last_status; // "fire", "safe", or "failed"
+        public String last_status;
         public String last_updated;
-        public String location; // varchar(30)
-        public String block; // varchar(30)
+        public String location;
+        public String block;
 
-        // Helper method to get display name for user view
+        @SerializedName("check")
+        public Boolean check; // System maintenance control - using existing column
+
         public String getDisplayName() {
             if (location != null && !location.isEmpty() && block != null && !block.isEmpty()) {
                 return location + " - " + block;
@@ -68,29 +67,33 @@ public class ApiModels {
             return esp32_id;
         }
 
-        // Helper to check if this is a fire status
         public boolean isFire() {
             return "fire".equalsIgnoreCase(last_status);
         }
 
-        // Helper to check if this is safe
         public boolean isSafe() {
             return "safe".equalsIgnoreCase(last_status);
         }
 
-        // Helper to check if failed
         public boolean isFailed() {
             return "failed".equalsIgnoreCase(last_status);
         }
+
+        public boolean isSystemActive() {
+            return check != null && check;
+        }
     }
 
-    // Update device location request
     public static class UpdateDeviceLocationRequest {
         public String location;
         public String block;
     }
 
-    // Device configuration helper (if needed for future use)
+    public static class UpdateSystemCheckRequest {
+        @SerializedName("check")
+        public Boolean check;
+    }
+
     public static class DeviceConfig {
         public String esp32_id;
         public String location;

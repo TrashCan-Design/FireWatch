@@ -49,11 +49,17 @@
             android:exported="false"
             android:theme="@style/Theme.Firewatch.NoActionBar" />
 
+
         <!-- Admin Activity -->
         <activity
             android:name=".AdminActivity"
             android:exported="false"
             android:theme="@style/Theme.Firewatch.NoActionBar" />
+
+        <activity android:name=".DeviceLogsActivity"
+            android:exported="false" />
+        <activity android:name=".AdminDeviceManagementActivity"
+            android:exported="false" />
 
         <!-- Admin Settings Activity -->
         <activity
