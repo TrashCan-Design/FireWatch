@@ -43,7 +43,7 @@ public class LoginActivity extends AppCompatActivity {
     private Runnable sessionCheckRunnable;
     private boolean sessionChecked = false;
 
-    private static final String CLERK_SIGN_IN_URL = "https://teaching-sloth-78.accounts.dev/sign-in";
+    private static final String CLERK_SIGN_IN_URL = "<CLERK_URL>";
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
