@@ -62,7 +62,7 @@ public class StatusPollerService extends Service {
     private void createNotificationChannels() {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 
-        // Monitoring channel (low priority)
+        // Monitoring channel low priority
         NotificationChannel monitoringChannel = new NotificationChannel(
                 CHANNEL_ID,
                 "Background Monitoring",
@@ -73,7 +73,7 @@ public class StatusPollerService extends Service {
         monitoringChannel.enableVibration(false);
         nm.createNotificationChannel(monitoringChannel);
 
-        // Alert channel (high priority)
+        // Alert channel high priority
         NotificationChannel alertChannel = new NotificationChannel(
                 ALERT_CHANNEL_ID,
                 "Fire Alerts",
@@ -121,9 +121,9 @@ public class StatusPollerService extends Service {
                     }
                 }
 
-                // Send alert if there are new fire devices or ongoing fire
+                // Send alert if old fire or new deevices
                 if (!currentFireDevices.isEmpty()) {
-                    // Check if this is a new fire or continuing fire
+                    // Check if this is a new fire or old
                     boolean isNewFire = !currentFireDevices.equals(lastFireDevices);
 
                     if (isNewFire || !lastFireDevices.isEmpty()) {

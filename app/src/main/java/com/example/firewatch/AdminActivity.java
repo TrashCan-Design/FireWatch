@@ -435,11 +435,9 @@ public class AdminActivity extends AppCompatActivity {
         // Update all devices' system_active status
         SupabaseApi api = ApiClient.api(this);
 
-        // We'll update via a simple request - you may need to adjust based on your Supabase setup
         Toast.makeText(this, active ? "Activating system..." : "Entering maintenance mode...", Toast.LENGTH_SHORT).show();
 
-        // Note: You'll need to implement a batch update endpoint or loop through devices
-        // For now, using a simple approach - you may want to add a server-side function
+
         fetchAll();
     }
 

@@ -20,7 +20,6 @@ public class SettingsActivity extends AppCompatActivity {
     private MaterialButton btnSave, btnCancel;
     private SharedPreferences sp;
 
-    // Require: https://<20-char-ref>.supabase.co/
     private static final Pattern SUPABASE_URL =
             Pattern.compile("^https?://([a-z0-9]{20})\\.supabase\\.co/?$", Pattern.CASE_INSENSITIVE);
 
@@ -50,7 +49,6 @@ public class SettingsActivity extends AppCompatActivity {
 
             url = normalizeUrl(url);
 
-            // --- Validation ---
             if (!isLikelySupabaseUrl(url)) {
                 toast("Enter a valid Supabase Project URL (Settings → API → Project URL)");
                 edtUrl.requestFocus();

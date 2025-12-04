@@ -11,7 +11,7 @@ import retrofit2.http.Header;
 
 public interface SupabaseApi {
 
-    // ==================== LOGS TABLE ====================
+    //logs
 
     @GET("rest/v1/logs?select=*&order=timestamp.desc&limit=50")
     Call<List<ApiModels.LogRow>> getLogs();
@@ -22,7 +22,7 @@ public interface SupabaseApi {
     @GET("rest/v1/logs?select=*&order=timestamp.desc")
     Call<List<ApiModels.LogRow>> getLogsByStatus(@Query("status") String status);
 
-    // ==================== STATUS TABLE ====================
+    //status
 
     @GET("rest/v1/status?select=*&order=last_updated.desc")
     Call<List<ApiModels.StatusRow>> getStatus();
@@ -36,9 +36,7 @@ public interface SupabaseApi {
     @GET("rest/v1/status?select=*&last_status=eq.safe&order=last_updated.desc")
     Call<List<ApiModels.StatusRow>> getSafeDevices();
 
-    /**
-     * Update device location and block
-     */
+   //device location update
     @PATCH("rest/v1/status")
     Call<Void> updateDeviceLocation(
             @Query("esp32_id") String esp32IdQuery,
@@ -54,7 +52,7 @@ public interface SupabaseApi {
             @Body ApiModels.UpdateSystemCheckRequest request
     );
 
-    // ==================== USERS TABLE ====================
+    // user
 
     @GET("rest/v1/users?select=*")
     Call<List<ApiModels.UserRow>> getUserByClerkId(@Query("clerk_user_id") String clerkUserId);

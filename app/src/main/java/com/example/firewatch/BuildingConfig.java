@@ -5,11 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Modified Building Configuration
- * Layout per floor: [Classroom] [Classroom] [Stairs] [12 Classrooms] [Stairs] [Classroom] [Classroom]
- * Total: 16 rooms per floor (14 classrooms + 2 stairs)
- */
+
 public class BuildingConfig {
 
     public static class Room {

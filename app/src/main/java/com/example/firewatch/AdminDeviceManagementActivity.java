@@ -132,7 +132,6 @@ public class AdminDeviceManagementActivity extends AppCompatActivity {
 
         SupabaseApi api = ApiClient.api(this);
 
-        // Fix: Pass "eq." + esp32Id for Supabase filtering
         api.updateDeviceLocation("eq." + esp32Id, request).enqueue(new Callback<Void>() {
             @Override
             public void onResponse(Call<Void> call, Response<Void> response) {
