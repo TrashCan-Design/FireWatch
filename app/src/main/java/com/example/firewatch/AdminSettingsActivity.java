@@ -41,8 +41,8 @@ public class AdminSettingsActivity extends AppCompatActivity {
         sp = getSharedPreferences("firewatch_prefs", MODE_PRIVATE);
 
         // Load saved values with defaults
-        String defaultUrl = "https://sdjumfnabhzfogdzgcqq.supabase.co/";
-        String defaultKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkanVtZm5hYmh6Zm9nZHpnY3FxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzNDE4ODIsImV4cCI6MjA3NDkxNzg4Mn0.NAkF3q6L2TrZ1GRTvBjdJKW3DzQjSt8m7ZIdcxoZbDw";
+        String defaultUrl = "<Supabase Url>";
+        String defaultKey = "<Supabase Key>";
 
         edtUrl.setText(sp.getString("supabase_url", defaultUrl));
         edtKey.setText(sp.getString("supabase_key", defaultKey));
