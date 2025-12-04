@@ -37,9 +37,9 @@ public class ApiClient {
         if (retrofit == null) {
             SharedPreferences sp = ctx.getSharedPreferences("firewatch_prefs", Context.MODE_PRIVATE);
 
-            String url = sp.getString("supabase_url", "https://sdjumfnabhzfogdzgcqq.supabase.co/");
+            String url = sp.getString("supabase_url", "<SupaBase Url>");
             String key = sp.getString("supabase_key",
-                    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkanVtZm5hYmh6Zm9nZHpnY3FxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzNDE4ODIsImV4cCI6MjA3NDkxNzg4Mn0.NAkF3q6L2TrZ1GRTvBjdJKW3DzQjSt8m7ZIdcxoZbDw");
+                    "<SupaBase Key>");
 
             if (!url.endsWith("/")) url += "/";
 
